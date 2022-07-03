@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <script src="../js/vue.js"></script>
+    <script src="../js/element.js"></script>
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/browser.min.js"></script>
+    <script src="../js/polyfill.min.js"></script>
+    <link type="text/css" rel="styleSheet" href="../css/index.css"/>
+    <link rel="stylesheet" type="text/css" href="../css/log.css"/>
+    <link rel="shortcut icon" href="../image/log.ico" type="image/x-icon"/>
+    <title>日志查询</title>
+    <script src="../js/moment.js"></script>
+</head>
+<body>
+<div id="root">
+    <el-container>
+        <el-header>
+            <h1 id="system_title">日志查询</h1>
+        </el-header>
+        <el-main>
+            <template>
+                <div class="block">
+                    <span class="demonstration">选择日期</span>
+                    <el-date-picker
+                            v-model="choseTime"
+                            type="datetimerange"
+                            :picker-options="pickerOptions"
+                            range-separator="至"
+                            start-placeholder="开始日期"
+                            end-placeholder="结束日期"
+                            align="right"
+                            @change="change"
+                            format="yyyy-MM-dd HH:mm:ss"
+                            value-format="yyyy-MM-dd HH:mm:ss"
+                    >
+                    </el-date-picker>
+                    <el-button type="primary" icon="el-icon-search" @click="clientMethod">搜索</el-button>
+                </div>
+            </template>
+            <div id="tableData">
+                <template>
+                    <el-table
+                            v-loading="loading"
+                            element-loading-text="Loading..."
+                            :element-loading-svg="svg"
+                            class="custom-loading-svg"
+                            element-loading-svg-view-box="-10, -10, 50, 50"
+                            :data="tableData"
+                            style="width: 100%"
+                            height="700"
+                            fit
+                            highlight-current-row
+                            :default-sort="{prop: 'id', order: 'descending'}"
+                            :row-class-name="tableRowClassName"
+                            border
+                            resizable
+                            stripe
+                    >
+                        <el-table-column
+                                prop="requestId"
+                                label="请求ID"
+                                width="180"
+                        >
+                        </el-table-column>
+                        <el-table-column prop="begintime" label="开始时间" sortable></el-table-column>
+                        <el-table-column prop="endtime" label="结束时间" sortable></el-table-column>
+                        <el-table-column
+                                prop="param"
+                                label="请求参数"
+                                width="500"
+                        ></el-table-column>
+                        <el-table-column prop="result" label="调用结果" width="300"></el-table-column>
+                        <el-table-column prop="successful" label="成功标识"
+                                         :filters="[ { text: '成功', value: 'Y' }, { text: '失败', value: 'N' }, ]"
+                                         :filter-method="filterIsSuccessful"
+                                         filter-placement="bottom-end">>
+                            <template slot-scope="scope">
+                                <el-tag
+                                        :type="scope.row.successful === 'Y' ? 'success' : 'primary'"
+                                        disable-transitions>{{scope.row.successful}}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="costtime" label="耗时"></el-table-column>
+                        <el-table-column prop="othermsg" label="其他信息" show-overflow-tooltip
+                                         effect="light"></el-table-column>
+                    </el-table>
+                </template>
+            </div>
+        </el-main>
+        <el-footer>
+            <div id="footer">
+                <el-pagination background :page-size="pageSize" layout="total, sizes, prev, pager, next, jumper"
+                               small="small"
+                               :total="totalSize" @size-change="handleSizeChange" :currentPage="currentPage"
+                               :page-sizes="[100, 200, 300, 400]"
+                               @current-change="handleCurrentChange">
+                </el-pagination>
+            </div>
+        </el-footer>
+    </el-container>
+</div>
+</body>
+<script>
+    new Vue({
+        el: "#root",
+        data() {
+            return {
+                pickerOptions: {
+                    shortcuts: [
+                        {
+                            text: "最近一周",
+                            onClick(picker) {
+                                const end = new Date();
+                                const start = new Date();
+                                start.setTime(start.getTime() - 3600 * 1000 * 24 * 7);
+                                picker.$emit("pick", [start, end]);
+                            },
+                        },
+                        {
+                            text: "最近一个月",
+                            onClick(picker) {
+                                const end = new Date();
+                                const start = new Date();
+                                start.setTime(start.getTime() - 3600 * 1000 * 24 * 30);
+                                picker.$emit("pick", [start, end]);
+                            },
+                        },
+                        {
+                            text: "最近三个月",
+                            onClick(picker) {
+                                const end = new Date();
+                                const start = new Date();
+                                start.setTime(start.getTime() - 3600 * 1000 * 24 * 90);
+                                picker.$emit("pick", [start, end]);
+                            },
+                        },
+                    ],
+                },
+                choseTime: [
+                    new Date(),
+                    new Date(new Date().getTime() - 3600 * 1000 * 24),
+                ],
+                totalSize: 0,
+                currentPage: 1,
+                pageSize: 100,
+                tableData: [],
+                loading: false,
+                svg: `
+        <path class="path" d="
+          M 30 15
+          L 28 17
+          M 25.61 25.61
+          A 15 15, 0, 0, 1, 15 30
+          A 15 15, 0, 1, 1, 27.99 7.5
+          L 15 15
+        " style="stroke-width: 4px; fill: rgba(0, 0, 0, 0)"/>
+      `
+            }
+        },
+        // Vue的生命周期
+        created: function () {
+            let num = 100;
+            console.log("============日志查询页面加载============");
+            //获取当前时间
+            moment.locale("zh-cn");
+            Vue.prototype.$moment = moment;
+            let nowTime = new Date();
+            let end = moment(nowTime).format("yyyy-MM-dd HH:mm:ss");
+            //获取前一天的时间
+            let begin = moment(nowTime.getTime() - 3600 * 1000 * 24).format(
+                "yyyy-MM-dd HH:mm:ss"
+            );
+            //查询日志总条数,来渲染一共可以分多少页
+            this.postQuery(null, '/log/userInitPage');
+        },
+        methods: {
+            clientMethod() {
+                this.queryTime(this.$data.choseTime);
+            },
+
+            filterIsSuccessful(value, row, column) {
+                return row.successful == value;
+            },
+
+            //点击事件发送json数据到后端,第一次参数anything应该是Vue系统占用的了,所以设置一个参数不使用即可
+            queryTime(anything, beginTime = this.$data.choseTime[0]
+                , endTime = this.$data.choseTime[1]) {
+                console.log("查询开始时间" + beginTime + "结束时间" + endTime);
+                beginTime = moment(beginTime).format("YYYY-MM-DD HH:mm:ss");
+                endTime = moment(endTime).format("YYYY-MM-DD HH:mm:ss");
+                let data = {
+                    current: this.$data.currentPage,
+                    size: this.$data.pageSize,
+                    begin: beginTime,
+                    end: endTime
+                };
+                this.postQuery("post", "/log/userQueryTime", data, headers = {
+                    'content-type': "application/json"
+                });
+            },
+
+            tableRowClassName({row, rowIndex}) {
+                if (row.levelString === "ERROR") {
+                    return "error-row";
+                }
+                return "";
+            },
+
+            //startAndEndDateTime 组件绑定值
+            change(times) {
+                if (!(times === null)) {
+                    //获取到开始时间和结束时间
+                    let [begin, end] = times;
+                    console.log("查询开始时间" + begin + "结束时间" + end);
+                    this.queryTime(null, begin, end);
+                }
+            },
+
+            postQuery(method = "get", url, data = {}, headers = {}) {
+                //加载动画
+                this.$data.loading = true;
+                return axios({
+                    method: method,
+                    url: url,
+                    data: JSON.stringify(data),
+                    headers: headers,
+                })
+                    .then((response) => {
+                        let records = response.data.records;
+                        if (null !== records) {
+                            //因为日志的记录是随时会新增的,所以需要实时更新
+                            this.$data.totalSize = response.data.records.length;
+                            this.$data.tableData = records;
+                            this.$data.currentPage = response.data.current;
+                            this.$data.pageSize = response.data.size;
+                            this.$data.loading = false;
+                        }
+                    })
+                    .catch((error) => {
+                        this.$data.loading = false;
+                        alert("查询失败" + error);
+                    });
+            },
+            //每页显示条数改变触发函数
+            handleSizeChange(number) {
+                console.log(`${number} items per page`);
+                this.postQuery(null, `/log/changePage/${this.$data.currentPage}/${number}`);
+            },
+            //当前页改变触发函数
+            handleCurrentChange(number) {
+                console.log(`current page: ${number}`);
+                this.postQuery(null, `/log/changePage/${number}/${this.$data.pageSize}`);
+            }
+        },
+    });
+</script>
+</html>
