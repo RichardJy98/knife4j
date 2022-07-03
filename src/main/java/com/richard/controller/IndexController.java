@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class IndexController {
 
     public static final String TYPE = "测试";
+    
 
     @ApiImplicitParam(name = "name", value = "姓名", required = true)
     @ApiOperation(value = "向客人问好")
